@@ -1,5 +1,5 @@
 #region Variables
-$OUPath = "OU=komputery, OU=5039,OU=Rejon,OU=Resort,DC=ad,DC=ms,DC=gov,DC=pl"
+$OUPath = "OU=5039,OU=Rejon,OU=Resort,DC=ad,DC=ms,DC=gov,DC=pl"
 #$computersFromOU = ("slebd01.ad.ms.gov.pl", "slesa01.ad.ms.gov.pl", "5039-sleDNS00.ad.ms.gov.pl")
 $resultsFile = "scannedComputers.csv"
 #endregion
@@ -24,13 +24,14 @@ catch {
     #WYCIĄGNĄĆ ZE ZMIENNEJ $_ JAKIEŚ INFORMACJE I SPERSONALIZOWAĆ KOMUNIKAT BŁĘDU. PATRZ https://youtu.be/A6afjA5Q9eM?t=1240
     #Write-Error -Message "Nie dziala dostep do AD, albo poswiadczenia sa bledne. Informacje systemowe: $Error[0]"
 }
+
 #endregion 
 
 
 #region Checking if file with reults from previous scans exist and if so, skipping computers included in that file (they were already scanned).
 $computersToScan = @()
 if ($TRUE -eq (Test-Path -LiteralPath $resultsFile)){
-    $alreadyScannedComputers = Import-Csv -Path $resultsFile -delimiter ";"  | Select-Object -ExpandProperty "PSComputerName"
+    $alreadyScannedComputers = Import-Csv -Path $resultsFile -delimiter ";"  | Select-Object -ExpandProperty "Hostname"
 
     ForEach ($computerFromOU in $computersFromOU){
         if ($alreadyScannedComputers -notcontains $computerFromOU){
@@ -38,49 +39,101 @@ if ($TRUE -eq (Test-Path -LiteralPath $resultsFile)){
         }
     }
 }
+else {
+    $computersToScan = $computersFromOU
+}
+Remove-Variable alreadyScannedComputers
 #endregion
 
 
 #region Scanning section
-# if variable $computersToScan exists, it means that there are not scan results in file $resultsFile and that means, that those computers wasn't scanned before
+# if variable $computersToScan exists, it means that there are no scan results in file $resultsFile and that means, that those computers wasn't scanned before
+#      ......... zrobić sprawdzanie nie czy istnieje zmienna computersToScan, ale czy istnieje i czy jest typu... ustalić jakiego typu.......
 if ($TRUE -eq $computersToScan) { 
-    $sessions = New-PSSession -ComputerName $computersToScan <#-ErrorAction SilentlyContinue#> -Credential $credentials
+    $sessions = New-PSSession -ComputerName $computersToScan -ErrorAction SilentlyContinue -Credential $credentials
 
-    $results = Invoke-Command -Session $sessions -ScriptBlock {
-        $Win32_ComputerSystem = Get-CimInstance -ClassName Win32_ComputerSystem -property *
-        $Win32_Processor = Get-CimInstance -ClassName Win32_Processor -property *
-        $Win32_SystemEnclosure = Get-CimInstance -ClassName Win32_SystemEnclosure -property *
-        $Win32_DiskDrive = Get-CimInstance -ClassName Win32_DiskDrive -property *
+    if ($TRUE -eq $sessions) {
+        $results = Invoke-Command -Session $sessions -ScriptBlock {
 
-        [pscustomobject]@{
-            ScanDate = (Get-Date -DisplayHint Date) #Get-Date -Format {dd.MM.yyyy}
-            Manufacturer = $Win32_ComputerSystem.Manufacturer
-            Model = $Win32_ComputerSystem.Model
-            ComputerSerialNumber = $Win32_SystemEnclosure.SerialNumber
-            ProcessorName = $Win32_Processor.Name;
-            ProcessorCores = $Win32_Processor.NumberOfCores;
-            ProcessorNrLogicalProcessors = $Win32_Processor.NumberOfLogicalProcessors; # $env:NUMBER_OF_PROCESSORS
-            ProcessorThreatCount = $Win32_Processor.ThreadCount;
-            RAM = $Win32_ComputerSystem.TotalPhysicalMemory
-            DiskDrive = $Win32_DiskDrive.Size;
+            if (($PSVersionTable.PSVersion.Major) -ge 5) {
+                $Win32_ComputerSystem = Get-CimInstance -ClassName Win32_ComputerSystem -property *
+                $Win32_Processor = Get-CimInstance -ClassName Win32_Processor -property *
+                $Win32_SystemEnclosure = Get-CimInstance -ClassName Win32_SystemEnclosure -property *
+                $Win32_DiskDrive = Get-CimInstance -ClassName Win32_DiskDrive -property *
 
-            HDDPartitions = (Get-CimInstance -ClassName Win32_LogicalDisk -Filter "DriveType=3").Size;
-            OS = (Get-CimInstance Win32_OperatingSystem -Property *).Name.Split("|") | Select-Object -First 1;
+                [pscustomobject]@{
+                    ScanDate = (Get-Date -DisplayHint Date) #Get-Date -Format {dd.MM.yyyy}
+                    Hostname = ([System.Net.Dns]::GetHostByName($env:computerName)).HOSTNAME
+                    Manufacturer = $Win32_ComputerSystem.Manufacturer
+                    Model = $Win32_ComputerSystem.Model
+                    ComputerSerialNumber = $Win32_SystemEnclosure.SerialNumber
+                    ProcessorName = $Win32_Processor.Name; #Get-Ciminstance -Query 'SELECT Name FROM Win32_Processor'
+                    RAM = $Win32_ComputerSystem.TotalPhysicalMemory
+                    DiskDrive = $Win32_DiskDrive.Size;
+                    HDDPartitions = (Get-CimInstance -ClassName Win32_LogicalDisk -Filter "DriveType=3").Size;
+                    OS = (Get-CimInstance Win32_OperatingSystem -Property *).Name.Split("|") | Select-Object -First 1;
+                    Annotation = ($PSVersionTable.PSVersion.Major)
+                }
+            }
+
+            else {
+                $Win32_ComputerSystem = Get-WmiObject -Class Win32_ComputerSystem
+                $Win32_Processor = Get-WmiObject -Class Win32_Processor
+                $Win32_DiskDrive = Get-WmiObject -Class Win32_DiskDrive
+
+                [pscustomobject]@{
+                    ScanDate = (Get-Date -DisplayHint Date);
+                    Hostname = ([System.Net.Dns]::GetHostByName($env:computerName)).HOSTNAME #($env:computername + "." + $env:USERDNSDOMAIN);
+                    Manufacturer = $Win32_ComputerSystem.Manufacturer;
+                    Model = $Win32_ComputerSystem.Model;
+                    ComputerSerialNumber = $NULL;
+                    ProcessorName = $Win32_Processor.Name;
+                    RAM = $Win32_ComputerSystem.TotalPhysicalMemory;
+                    DiskDrive = $Win32_DiskDrive.Size;
+                    HDDPartitions = $NULL;
+                    OS = "ble";
+                    Annotation = ($PSVersionTable.PSVersion.Major);
+                }
+            }
         }
+
+        # saving scan results to a file with setting property order. 
+        # IMPORTANT THING ! - property PSComputerName is part of object $results and it is generated automatically due running Invoke-Command. It is not property returned from remote computers, like other properties. 
+        $results | select-object -property `
+                                "ScanDate", `
+                                #"PSComputerName", `
+                                "Hostname", `
+                                "Manufacturer", `
+                                "Model", `
+                                "ProcessorName", `
+                                "RAM" , `
+                                "DiskDrive", `
+                                "OS", `
+                                "Annotation" `
+                                | Export-Csv -Path $resultsFile -Delimiter ";" -Append 
+
+        Remove-Variable results
     }
 
-    # saving scan results to a file with setting property order. 
-    # IMPORTANT THING ! - property PSComputerName is part of object $results and it is generated automatically due running Invoke-Command. It is not property returned from remote computers, like other properties. 
-    $results | select-object -property "ScanDate", "PSComputerName" | Export-Csv -Path $resultsFile -Delimiter ";" -Append 
-
-    #clearing variables
+    else {
+        Write-Warning -Message "Cannot connect with computers (maybe they're offline):" 
+        $computersToScan | Sort-Object
+        # to trzeba zmienić bo działa tylko wtedy gdy nie uda się nawiązać żadnej sesji w IFie, a to się raczej nei będzie zdarzało
+    }
+    
     Remove-Variable computersToScan
-    Remove-Variable results
-} else {"Wszystkie komputery z OU byly juz wczesniej przeskanowane "}
+} 
+
+else {
+    write-host "All computers from $OUPath was already scanned."
+}
 
 #endregion
 
 #region TRASH
+
+# Get-NetIPAddress | Where-Object {($_."InterfaceAlias" -like "Ethernet") -and ($_."AddressFamily" -like "*IPv4*" )} | Select-Object -ExpandProperty IPAddress
+
 #Get-CimClass -Namespace root/CIMV2 | Where-Object CimClassName -like Win32* | Select-Object CimClassName -wyświetla wszystkie klasy CIM z których można pobierać dane
 
 #$eeee | Select-Object -Property Producent, Model, PSComputerName, OS, ProcesorName, RAM, HDD
