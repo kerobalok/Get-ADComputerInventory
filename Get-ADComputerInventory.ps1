@@ -31,7 +31,7 @@ catch {
 #region Checking if file with reults from previous scans exist and if so, skipping computers included in that file (they were already scanned).
 $computersToScan = @()
 if ($TRUE -eq (Test-Path -LiteralPath $resultsFile)){
-    $alreadyScannedComputers = Import-Csv -Path $resultsFile -delimiter ";"  | Select-Object -ExpandProperty "Hostname"
+    $alreadyScannedComputers = Import-Csv -Path $resultsFile -delimiter ";"  | Select-Object -ExpandProperty "PhisicalHostname"
 
     ForEach ($computerFromOU in $computersFromOU){
         if ($alreadyScannedComputers -notcontains $computerFromOU){
@@ -63,7 +63,7 @@ if ($TRUE -eq $computersToScan) {
 
                 [pscustomobject]@{
                     ScanDate = (Get-Date -DisplayHint Date) #Get-Date -Format {dd.MM.yyyy}
-                    Hostname = ([System.Net.Dns]::GetHostByName($env:computerName)).HOSTNAME
+                    PhysicalHostname = ([System.Net.Dns]::GetHostByName($env:computerName)).HOSTNAME
                     Manufacturer = $Win32_ComputerSystem.Manufacturer
                     Model = $Win32_ComputerSystem.Model
                     ComputerSerialNumber = $Win32_SystemEnclosure.SerialNumber
@@ -83,7 +83,7 @@ if ($TRUE -eq $computersToScan) {
 
                 [pscustomobject]@{
                     ScanDate = (Get-Date -DisplayHint Date);
-                    Hostname = ([System.Net.Dns]::GetHostByName($env:computerName)).HOSTNAME #($env:computername + "." + $env:USERDNSDOMAIN);
+                    PhysicalHostname = ([System.Net.Dns]::GetHostByName($env:computerName)).HOSTNAME #($env:computername + "." + $env:USERDNSDOMAIN);
                     Manufacturer = $Win32_ComputerSystem.Manufacturer;
                     Model = $Win32_ComputerSystem.Model;
                     ComputerSerialNumber = $NULL;
@@ -101,8 +101,8 @@ if ($TRUE -eq $computersToScan) {
         # IMPORTANT THING ! - property PSComputerName is part of object $results and it is generated automatically due running Invoke-Command. It is not property returned from remote computers, like other properties. 
         $results | select-object -property `
                                 "ScanDate", `
-                                #"PSComputerName", `
-                                "Hostname", `
+                                "PSComputerName", `
+                                "PhysicalHostname", `
                                 "Manufacturer", `
                                 "Model", `
                                 "ProcessorName", `
