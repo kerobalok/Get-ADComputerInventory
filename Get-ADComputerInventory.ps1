@@ -31,14 +31,14 @@ catch {
 #region Checking if file with reults from previous scans exist and if so, skipping computers included in that file (they were already scanned).
 $computersToScan = @()
 if ($TRUE -eq (Test-Path -LiteralPath $resultsFile)){
-    $alreadyScannedComputers = Import-Csv -Path $resultsFile -delimiter ";"  | Select-Object -ExpandProperty "PhisicalHostname"
-
+    $alreadyScannedComputers = Import-Csv -Path $resultsFile -delimiter ";"
     ForEach ($computerFromOU in $computersFromOU){
-        if ($alreadyScannedComputers -notcontains $computerFromOU){
+        if ( ($alreadyScannedComputers.PSComputerName -notcontains $computerFromOU) -and ($alreadyScannedComputers.PhysicalHostname -notcontains $computerFromOU) ) {
             $computersToScan += $computerFromOU
         }
     }
 }
+
 else {
     $computersToScan = $computersFromOU
 }
@@ -99,9 +99,11 @@ if ($TRUE -eq $computersToScan) {
 
         # saving scan results to a file with setting property order. 
         # IMPORTANT THING ! - property PSComputerName is part of object $results and it is generated automatically due running Invoke-Command. It is not property returned from remote computers, like other properties. 
+        $results | Add-Member -MemberType AliasProperty -Name "LogicalHostname" -Value PSComputerName
         $results | select-object -property `
                                 "ScanDate", `
                                 "PSComputerName", `
+                                "LogicalHostname", `
                                 "PhysicalHostname", `
                                 "Manufacturer", `
                                 "Model", `
