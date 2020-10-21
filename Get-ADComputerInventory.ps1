@@ -6,25 +6,25 @@ $resultsFile = "scannedComputers.csv"
 
 #region Testing Credentials and if ther're correct getting computer DNSHostnames list from AD into $computersFromOU variable
 #$credentials = Get-Credential
-try {
-    $computersFromOU = (Get-ADComputer -Credential $credentials -SearchBase $OUPath -Filter * -Properties OperatingSystem, OperatingSystemServicePack, OperatingSystemVersion, WhenCreated -ErrorAction Stop | Where-Object {($_.OperatingSystem -like "*windows*") -and ($_.Enabled -eq $TRUE)}).DNSHostName
-}
-catch {
-    $somethingWentWrong = $_
-    #$blwrite-host "`t`n--- SOMETHING WENT WRONG ---`n"
-    if ($somethingWentWrong.Exception.Message -like "*Get-ADComputer*"){
-        Write-Warning -Message "W sytemie brakuje commandletu 'Get-ADComputer', a to prawdopodobnie znaczy brak modulu ActiveDirectory. Zainstalowane moduly mozesz sprawdzic poleceniem 'Get-Module'. Ponizej systemowy opis bledu"
-        Throw
-    }
-    else {
-        Throw
-    }
-    #write-error $_
-    
-    #WYCIĄGNĄĆ ZE ZMIENNEJ $_ JAKIEŚ INFORMACJE I SPERSONALIZOWAĆ KOMUNIKAT BŁĘDU. PATRZ https://youtu.be/A6afjA5Q9eM?t=1240
-    #Write-Error -Message "Nie dziala dostep do AD, albo poswiadczenia sa bledne. Informacje systemowe: $Error[0]"
-}
 
+# Uncommend below to get computer list from AD. This is commented only for testing purposes.
+# try {
+#     $computersFromOU = (Get-ADComputer -Credential $credentials -SearchBase $OUPath -Filter * -Properties OperatingSystem, OperatingSystemServicePack, OperatingSystemVersion, WhenCreated -ErrorAction Stop | Where-Object {($_.OperatingSystem -like "*windows*") -and ($_.Enabled -eq $TRUE)}).DNSHostName
+# }
+# catch {
+#     $somethingWentWrong = $_
+#     #$blwrite-host "`t`n--- SOMETHING WENT WRONG ---`n"
+#     if ($somethingWentWrong.Exception.Message -like "*Get-ADComputer*"){
+#         Write-Warning -Message "W sytemie brakuje commandletu 'Get-ADComputer', a to prawdopodobnie znaczy brak modulu ActiveDirectory. Zainstalowane moduly mozesz sprawdzic poleceniem 'Get-Module'. Ponizej systemowy opis bledu"
+#         Throw
+#     }
+#     else {
+#         Throw
+#     }
+# }
+
+# Remove below line in production environement. This is only for testing purposes. 
+$computersFromOU = ("5039-lukbak-k.ad.ms.gov.pl", "5039-barmac-k.ad.ms.gov.pl")
 #endregion 
 
 
@@ -71,11 +71,13 @@ if ($TRUE -eq $computersToScan) {
                     RAM = $Win32_ComputerSystem.TotalPhysicalMemory
                     DiskDrive = $Win32_DiskDrive.Size;
                     HDDPartitions = (Get-CimInstance -ClassName Win32_LogicalDisk -Filter "DriveType=3").Size;
+                    #HDDPartitions = (Get-CimInstance -ClassName Win32_LogicalDisk -Filter "DriveType=3").Size | ForEach-Object {[math]::Round(($_ / 1GB),2)};
                     OS = (Get-CimInstance Win32_OperatingSystem -Property *).Name.Split("|") | Select-Object -First 1;
                     Annotation = ($PSVersionTable.PSVersion.Major)
                 }
             }
 
+            # Code for PowerShell with version less than 5
             else {
                 $Win32_ComputerSystem = Get-WmiObject -Class Win32_ComputerSystem
                 $Win32_Processor = Get-WmiObject -Class Win32_Processor
@@ -91,15 +93,36 @@ if ($TRUE -eq $computersToScan) {
                     RAM = $Win32_ComputerSystem.TotalPhysicalMemory;
                     DiskDrive = $Win32_DiskDrive.Size;
                     HDDPartitions = $NULL;
-                    OS = "ble";
+                    OS = "ble1";
                     Annotation = ($PSVersionTable.PSVersion.Major);
                 }
             }
         }
+                
+        # Adding alias LogicalHostname. It is required only for Windows Clusters which name in AD is differend from name of activer Hyper-V cluster member on which it runs.
+        # For example, in AD cluster can have name "cluster.domain", but after connecting to it thru PowerShell and ask about ther name it will return name of physical server, not cluster.
+        # This fact caused problems beacuse script saves to results to file - one from cluster name and one from physical server - member of cluster.
+        
+        # foreach ($computer in $results){
 
-        # saving scan results to a file with setting property order. 
-        # IMPORTANT THING ! - property PSComputerName is part of object $results and it is generated automatically due running Invoke-Command. It is not property returned from remote computers, like other properties. 
-        $results | Add-Member -MemberType AliasProperty -Name "LogicalHostname" -Value PSComputerName
+        #     if (($NULL -eq $computer.PSComputerName) -or ("" -eq $computer.PSComputerName)){
+        #         $computer | Add-Member -MemberType AliasProperty -Name "LogicalHostname" -Value PhysicalHostname
+        #         #write-host "ble $_.PhysicalHostname "
+        #     }
+        # }
+        
+        foreach ($computer in $results){
+            if (!($computer.PSObject.Properties["PSComputerName"]) <#-or ($NULL -eq $computer.PSComputerName) -or ("" -eq $computer.PSComputerName)#>){
+                $computer | Add-member -NotePropertyName "LogicalHostname" -NotePropertyValue "dupa"
+            }
+            else {
+                $computer | Add-member -NotePropertyName "LogicalHostname" -NotePropertyValue "jas"
+            }
+        }
+
+
+
+        # Saving results to a file
         $results | select-object -property `
                                 "ScanDate", `
                                 "PSComputerName", `
@@ -114,7 +137,7 @@ if ($TRUE -eq $computersToScan) {
                                 "Annotation" `
                                 | Export-Csv -Path $resultsFile -Delimiter ";" -Append 
 
-        Remove-Variable results
+        #Remove-Variable results
     }
 
     else {
@@ -132,7 +155,12 @@ else {
 
 #endregion
 
+
+
 #region TRASH
+#WYCIĄGNĄĆ ZE ZMIENNEJ $_ JAKIEŚ INFORMACJE I SPERSONALIZOWAĆ KOMUNIKAT BŁĘDU. PATRZ https://youtu.be/A6afjA5Q9eM?t=1240
+#Write-Error -Message "Nie dziala dostep do AD, albo poswiadczenia sa bledne. Informacje systemowe: $Error[0]"
+
 
 # Get-NetIPAddress | Where-Object {($_."InterfaceAlias" -like "Ethernet") -and ($_."AddressFamily" -like "*IPv4*" )} | Select-Object -ExpandProperty IPAddress
 
