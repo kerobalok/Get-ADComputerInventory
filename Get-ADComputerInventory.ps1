@@ -1,6 +1,6 @@
 #region Variables
 $OUPath = "OU=5039,OU=Rejon,OU=Resort,DC=ad,DC=ms,DC=gov,DC=pl"
-#$computersFromOU = ("slebd01.ad.ms.gov.pl", "slesa01.ad.ms.gov.pl", "5039-sleDNS00.ad.ms.gov.pl")
+$computersFromOU = ("5039-marnow-k.ad.ms.gov.pl","slebd01.ad.ms.gov.pl")
 $resultsFile = "scannedComputers.csv"
 #endregion
 
@@ -22,10 +22,6 @@ $resultsFile = "scannedComputers.csv"
 #         Throw
 #     }
 # }
-
-# Remove below line in production environement. This is only for testing purposes. 
-$computersFromOU = ("5039-lukbak-k.ad.ms.gov.pl", "5039-barmac-k.ad.ms.gov.pl")
-#endregion 
 
 
 #region Checking if file with reults from previous scans exist and if so, skipping computers included in that file (they were already scanned).
@@ -61,7 +57,7 @@ if ($TRUE -eq $computersToScan) {
                 $Win32_SystemEnclosure = Get-CimInstance -ClassName Win32_SystemEnclosure -property *
                 $Win32_DiskDrive = Get-CimInstance -ClassName Win32_DiskDrive -property *
 
-                [pscustomobject]@{
+                new-object -TypeName PSCustomObject @{
                     ScanDate = (Get-Date -DisplayHint Date) #Get-Date -Format {dd.MM.yyyy}
                     PhysicalHostname = ([System.Net.Dns]::GetHostByName($env:computerName)).HOSTNAME
                     Manufacturer = $Win32_ComputerSystem.Manufacturer
@@ -83,7 +79,7 @@ if ($TRUE -eq $computersToScan) {
                 $Win32_Processor = Get-WmiObject -Class Win32_Processor
                 $Win32_DiskDrive = Get-WmiObject -Class Win32_DiskDrive
 
-                [pscustomobject]@{
+                new-object -TypeName PSCustomObject @{
                     ScanDate = (Get-Date -DisplayHint Date);
                     PhysicalHostname = ([System.Net.Dns]::GetHostByName($env:computerName)).HOSTNAME #($env:computername + "." + $env:USERDNSDOMAIN);
                     Manufacturer = $Win32_ComputerSystem.Manufacturer;
