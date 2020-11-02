@@ -1,27 +1,40 @@
+#region Documentation
+<#
+.Synopsis
+Ble ble ble
+.Description
+This script reads computer accounts with MS Windows OS from Active Directory Organization Unit and scan them for processor, OS Version, RAM etc.
+.Notes
+AUTHOR: Daniel Sajdyk
+
+
+.Link
+http://
+#Requires-Version ??????
+#>
+#endregion
+
 #region Variables
 $OUPath = "OU=5039,OU=Rejon,OU=Resort,DC=ad,DC=ms,DC=gov,DC=pl"
-$computersFromOU = ("5039-marnow-k.ad.ms.gov.pl","slebd01.ad.ms.gov.pl")
+#$computersFromOU = ("5039-marnow-k.ad.ms.gov.pl","slebd01.ad.ms.gov.pl")
 $resultsFile = "scannedComputers.csv"
 #endregion
 
 #region Testing Credentials and if ther're correct getting computer DNSHostnames list from AD into $computersFromOU variable
-#$credentials = Get-Credential
-
-# Uncommend below to get computer list from AD. This is commented only for testing purposes.
-# try {
-#     $computersFromOU = (Get-ADComputer -Credential $credentials -SearchBase $OUPath -Filter * -Properties OperatingSystem, OperatingSystemServicePack, OperatingSystemVersion, WhenCreated -ErrorAction Stop | Where-Object {($_.OperatingSystem -like "*windows*") -and ($_.Enabled -eq $TRUE)}).DNSHostName
-# }
-# catch {
-#     $somethingWentWrong = $_
-#     #$blwrite-host "`t`n--- SOMETHING WENT WRONG ---`n"
-#     if ($somethingWentWrong.Exception.Message -like "*Get-ADComputer*"){
-#         Write-Warning -Message "W sytemie brakuje commandletu 'Get-ADComputer', a to prawdopodobnie znaczy brak modulu ActiveDirectory. Zainstalowane moduly mozesz sprawdzic poleceniem 'Get-Module'. Ponizej systemowy opis bledu"
-#         Throw
-#     }
-#     else {
-#         Throw
-#     }
-# }
+try {
+    $computersFromOU = (Get-ADComputer -Credential $credentials -SearchBase $OUPath -Filter * -Properties OperatingSystem, OperatingSystemServicePack, OperatingSystemVersion, WhenCreated -ErrorAction Stop | Where-Object {($_.OperatingSystem -like "*windows*") -and ($_.Enabled -eq $TRUE)}).DNSHostName
+}
+catch {
+    $somethingWentWrong = $_
+    if ($somethingWentWrong.Exception.Message -like "*Get-ADComputer*"){
+        Write-Warning -Message "W sytemie brakuje commandletu 'Get-ADComputer', a to prawdopodobnie znaczy brak modulu ActiveDirectory. Zainstalowane moduly mozesz sprawdzic poleceniem 'Get-Module'. Ponizej systemowy opis bledu"
+        Throw
+    }
+    else {
+        Throw
+    }
+}
+#endregion
 
 
 #region Checking if file with reults from previous scans exist and if so, skipping computers included in that file (they were already scanned).
@@ -34,7 +47,6 @@ if ($TRUE -eq (Test-Path -LiteralPath $resultsFile)){
         }
     }
 }
-
 else {
     $computersToScan = $computersFromOU
 }
@@ -56,21 +68,24 @@ if ($TRUE -eq $computersToScan) {
                 $Win32_Processor = Get-CimInstance -ClassName Win32_Processor -property *
                 $Win32_SystemEnclosure = Get-CimInstance -ClassName Win32_SystemEnclosure -property *
                 $Win32_DiskDrive = Get-CimInstance -ClassName Win32_DiskDrive -property *
-
-                new-object -TypeName PSCustomObject @{
-                    ScanDate = (Get-Date -DisplayHint Date) #Get-Date -Format {dd.MM.yyyy}
-                    PhysicalHostname = ([System.Net.Dns]::GetHostByName($env:computerName)).HOSTNAME
-                    Manufacturer = $Win32_ComputerSystem.Manufacturer
-                    Model = $Win32_ComputerSystem.Model
-                    ComputerSerialNumber = $Win32_SystemEnclosure.SerialNumber
-                    ProcessorName = $Win32_Processor.Name; #Get-Ciminstance -Query 'SELECT Name FROM Win32_Processor'
-                    RAM = $Win32_ComputerSystem.TotalPhysicalMemory
-                    DiskDrive = $Win32_DiskDrive.Size;
-                    HDDPartitions = (Get-CimInstance -ClassName Win32_LogicalDisk -Filter "DriveType=3").Size;
-                    #HDDPartitions = (Get-CimInstance -ClassName Win32_LogicalDisk -Filter "DriveType=3").Size | ForEach-Object {[math]::Round(($_ / 1GB),2)};
-                    OS = (Get-CimInstance Win32_OperatingSystem -Property *).Name.Split("|") | Select-Object -First 1;
-                    Annotation = ($PSVersionTable.PSVersion.Major)
-                }
+                $OS = ((Get-CimInstance Win32_OperatingSystem -Property *).Name.Split("|") | Select-Object -First 1)
+                
+                $tablica = @{}
+                
+                $tablica.add("ScanDate",             (Get-Date -DisplayHint Date)) #Get-Date -Format {dd.MM.yyyy}
+                $tablica.add("PhysicalHostname",     ([System.Net.Dns]::GetHostByName($env:computerName)).HOSTNAME)
+                $tablica.add("Manufacturer",         $Win32_ComputerSystem.Manufacturer)
+                $tablica.add("Model",                $Win32_ComputerSystem.Model)
+                $tablica.add("ComputerSerialNumber", $Win32_SystemEnclosure.SerialNumber)
+                $tablica.add("ProcessorName",        $Win32_Processor.Name) #Get-Ciminstance -Query 'SELECT Name FROM Win32_Processor'
+                $tablica.add("RAM",                  ([math]::Round(($Win32_ComputerSystem.TotalPhysicalMemory / 1GB),2)))
+                $tablica.add("DiskDrive",            ($Win32_DiskDrive.Size | ForEach-Object {[math]::Round(($_ / 1GB),2)}) )
+                #$tablica.add("HDDPartitions",        (Get-CimInstance -ClassName Win32_LogicalDisk -Filter "DriveType=3").Size   )
+                #HDDPartitions = (Get-CimInstance -ClassName Win32_LogicalDisk -Filter "DriveType=3").Size | ForEach-Object {[math]::Round(($_ / 1GB),2)};
+                $tablica.add("OS",                   $OS)
+                $tablica.add("PSVersion",           (($PSVersionTable.PSVersion.Major).ToString() + "." + ($PSVersionTable.PSVersion.Minor) + "." + ($PSVersionTable.PSVersion.Patch)))
+                
+                new-object -Type psobject -Property $tablica
             }
 
             # Code for PowerShell with version less than 5
@@ -78,43 +93,48 @@ if ($TRUE -eq $computersToScan) {
                 $Win32_ComputerSystem = Get-WmiObject -Class Win32_ComputerSystem
                 $Win32_Processor = Get-WmiObject -Class Win32_Processor
                 $Win32_DiskDrive = Get-WmiObject -Class Win32_DiskDrive
+                $OS = &{$x = get-wmiobject win32_operatingsystem | Select-Object -ExpandProperty Name; $x.split("|")[0]}
 
-                new-object -TypeName PSCustomObject @{
-                    ScanDate = (Get-Date -DisplayHint Date);
-                    PhysicalHostname = ([System.Net.Dns]::GetHostByName($env:computerName)).HOSTNAME #($env:computername + "." + $env:USERDNSDOMAIN);
-                    Manufacturer = $Win32_ComputerSystem.Manufacturer;
-                    Model = $Win32_ComputerSystem.Model;
-                    ComputerSerialNumber = $NULL;
-                    ProcessorName = $Win32_Processor.Name;
-                    RAM = $Win32_ComputerSystem.TotalPhysicalMemory;
-                    DiskDrive = $Win32_DiskDrive.Size;
-                    HDDPartitions = $NULL;
-                    OS = "ble1";
-                    Annotation = ($PSVersionTable.PSVersion.Major);
-                }
+                $tablica = @{}
+
+                $tablica.add("ScanDate",            (Get-Date -DisplayHint Date))
+                $tablica.add("PhysicalHostname",    ([System.Net.Dns]::GetHostByName($env:computerName)).HOSTNAME) #($env:computername + "." + $env:USERDNSDOMAIN);
+                $tablica.add("Manufacturer",        $Win32_ComputerSystem.Manufacturer)
+                $tablica.add("Model",               $Win32_ComputerSystem.Model)
+                $tablica.add("ComputerSerialNumber",$NULL)
+                $tablica.add("ProcessorName",       $Win32_Processor.Name)
+                $tablica.add("RAM",                 ([math]::Round(($Win32_ComputerSystem.TotalPhysicalMemory / 1GB),2)))
+                $tablica.add("DiskDrive",           ($Win32_DiskDrive.Size | ForEach-Object {[math]::Round(($_ / 1GB),2)}) )
+                #$tablica.add("HDDPartitions",       $NULL)
+                $tablica.add("OS",                  $OS)   
+                $tablica.add("PSVersion",           (($PSVersionTable.PSVersion.Major).ToString() + "." + ($PSVersionTable.PSVersion.Minor) + "." + ($PSVersionTable.PSVersion.Patch)))
+                
+
+                new-object -Type PSobject -Property $tablica
             }
         }
+    
                 
         # Adding alias LogicalHostname. It is required only for Windows Clusters which name in AD is differend from name of activer Hyper-V cluster member on which it runs.
         # For example, in AD cluster can have name "cluster.domain", but after connecting to it thru PowerShell and ask about ther name it will return name of physical server, not cluster.
         # This fact caused problems beacuse script saves to results to file - one from cluster name and one from physical server - member of cluster.
         
-        # foreach ($computer in $results){
+        # foreach ($tablica.add.add.add in $results){
 
-        #     if (($NULL -eq $computer.PSComputerName) -or ("" -eq $computer.PSComputerName)){
-        #         $computer | Add-Member -MemberType AliasProperty -Name "LogicalHostname" -Value PhysicalHostname
+        #     if (($NULL -eq $tablica.PSComputerName) -or ("" -eq $tablica.PSComputerName)){
+        #         $tablica | Add-Member -MemberType AliasProperty -Name "LogicalHostname" -Value PhysicalHostname
         #         #write-host "ble $_.PhysicalHostname "
         #     }
         # }
         
-        foreach ($computer in $results){
-            if (!($computer.PSObject.Properties["PSComputerName"]) <#-or ($NULL -eq $computer.PSComputerName) -or ("" -eq $computer.PSComputerName)#>){
-                $computer | Add-member -NotePropertyName "LogicalHostname" -NotePropertyValue "dupa"
-            }
-            else {
-                $computer | Add-member -NotePropertyName "LogicalHostname" -NotePropertyValue "jas"
-            }
-        }
+        # foreach ($tablica in $results){
+        #     if (!($tablica.PSObject.Properties["PSComputerName"]) <#-or ($NULL -eq $tablica.PSComputerName) -or ("" -eq $tablica.PSComputerName)#>){
+        #         $tablica | Add-member -NotePropertyName "LogicalHostname"  "dupa"
+        #     }
+        #     else {
+        #         $tablica | Add-member -NotePropertyName "LogicalHostname"  "jas"
+        #     }
+        # }
 
 
 
@@ -122,7 +142,7 @@ if ($TRUE -eq $computersToScan) {
         $results | select-object -property `
                                 "ScanDate", `
                                 "PSComputerName", `
-                                "LogicalHostname", `
+                                #"LogicalHostname", `
                                 "PhysicalHostname", `
                                 "Manufacturer", `
                                 "Model", `
@@ -130,14 +150,15 @@ if ($TRUE -eq $computersToScan) {
                                 "RAM" , `
                                 "DiskDrive", `
                                 "OS", `
-                                "Annotation" `
+                                "PSVersion" `
                                 | Export-Csv -Path $resultsFile -Delimiter ";" -Append 
 
-        #Remove-Variable results
+        Remove-Variable results
+        $sessions | Remove-PSSession
     }
 
     else {
-        Write-Warning -Message "Cannot connect with computers (maybe they're offline):" 
+        Write-Warning -Message "Those computers wasn't scanned before (they're not present in file) and now script couldn't establish connection with them." 
         $computersToScan | Sort-Object
         # to trzeba zmienić bo działa tylko wtedy gdy nie uda się nawiązać żadnej sesji w IFie, a to się raczej nei będzie zdarzało
     }
@@ -159,6 +180,7 @@ else {
 
 
 # Get-NetIPAddress | Where-Object {($_."InterfaceAlias" -like "Ethernet") -and ($_."AddressFamily" -like "*IPv4*" )} | Select-Object -ExpandProperty IPAddress
+# Get-NetIPAddress -AddressState Preferred -AddressFamily IPv4 | select IPAddress,InterfaceAlias
 
 #Get-CimClass -Namespace root/CIMV2 | Where-Object CimClassName -like Win32* | Select-Object CimClassName -wyświetla wszystkie klasy CIM z których można pobierać dane
 
