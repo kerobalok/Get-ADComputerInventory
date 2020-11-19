@@ -70,10 +70,10 @@ if ($TRUE -eq $computersToScan) {
                 $Win32_SystemEnclosure = Get-CimInstance -ClassName Win32_SystemEnclosure -property *
                 $Win32_DiskDrive = Get-CimInstance -ClassName Win32_DiskDrive -property *
                 $OS = ((Get-CimInstance Win32_OperatingSystem -Property *).Name.Split("|") | Select-Object -First 1)
-                $IPAddress = (Get-NetConnectionProfile).InterfaceIndex | Get-NetIPAddress -InterfaceIndex {($_)} | Where-Object {$_.AddressFamily -like "IPv4"};
-                
+                #$IPAddress = (Get-NetConnectionProfile).InterfaceIndex | Get-NetIPAddress -InterfaceIndex {($_)} | Where-Object {$_.AddressFamily -like "IPv4"};
+                $IPAddress = ((Get-NetConnectionProfile).InterfaceIndex | Get-NetIPAddress -InterfaceIndex {($_)} | Where-Object {$_.AddressFamily -like "IPv4"} | foreach-object {"(" + ($_.SuffixOrigin) + ": " + (($_.IPAddress).ToString()) + ": " + ((Get-NetAdapter -InterfaceIndex $_.InterfaceIndex).MacAddress) + ")"})
+
                 $tablica = @{}
-                
                 $tablica.add("ScanDate",             (Get-Date -DisplayHint Date)) #Get-Date -Format {dd.MM.yyyy}
                 $tablica.add("PhysicalHostname",     ([System.Net.Dns]::GetHostByName($env:computerName)).HOSTNAME) #Get-CimInstance -ClassName Win32_ComputerSystem | Select-Object -Property {$_.Name + "." + $_.Domain}
                 $tablica.add("Manufacturer",         $Win32_ComputerSystem.Manufacturer)
@@ -88,8 +88,9 @@ if ($TRUE -eq $computersToScan) {
                 $tablica.add("OS",                   $OS)
                 #$tablica.add("LocalAccounts",       (get-localuser | foreach {if($_.Enabled -eq $true){$_.Name + "`(A`)"}else{$_.Name +"`(D`)"}}))
                 $tablica.add("LocalAdministrators",  (Get-LocalGroupMember -SID S-1-5-32-544))
-                $tablica.add("IPAddress",            $IPAddress.IPAddress)
-                $tablica.add("SuffixOrigin",         $IPAddress.SuffixOrigin)
+                $tablica.add("IPaddress",             $IPAddress)
+                #$tablica.add("IPAddress",            $IPAddress.IPAddress)
+                #$tablica.add("SuffixOrigin",         $IPAddress.SuffixOrigin)
                 $tablica.add("PSVersion",           (($PSVersionTable.PSVersion.Major).ToString() + "." + ($PSVersionTable.PSVersion.Minor)))
                 
                 new-object -Type psobject -Property $tablica
@@ -103,7 +104,6 @@ if ($TRUE -eq $computersToScan) {
                 $OS = &{$x = get-wmiobject win32_operatingsystem | Select-Object -ExpandProperty Name; $x.split("|")[0]}
 
                 $tablica = @{}
-
                 $tablica.add("ScanDate",            (Get-Date -DisplayHint Date))
                 $tablica.add("PhysicalHostname",    ([System.Net.Dns]::GetHostByName($env:computerName)).HOSTNAME) #($env:computername + "." + $env:USERDNSDOMAIN);
                 $tablica.add("Manufacturer",        $Win32_ComputerSystem.Manufacturer)
@@ -117,7 +117,7 @@ if ($TRUE -eq $computersToScan) {
                 $tablica.add("OS",                  $OS)   
                 $tablica.add("LocalAdministrators", $NULL)
                 $tablica.add("IPAddress",           $NULL)
-                $tablica.add("SuffixOrigin",        $NULL)
+                #$tablica.add("SuffixOrigin",        $NULL)
                 $tablica.add("PSVersion",           (($PSVersionTable.PSVersion.Major).ToString() + "." + ($PSVersionTable.PSVersion.Minor)))
                 
 
@@ -126,28 +126,6 @@ if ($TRUE -eq $computersToScan) {
         }
     
                 
-        # Adding alias LogicalHostname. It is required only for Windows Clusters which name in AD is differend from name of activer Hyper-V cluster member on which it runs.
-        # For example, in AD cluster can have name "cluster.domain", but after connecting to it thru PowerShell and ask about ther name it will return name of physical server, not cluster.
-        # This fact caused problems beacuse script saves to results to file - one from cluster name and one from physical server - member of cluster.
-        
-        # foreach ($tablica.add.add.add in $results){
-
-        #     if (($NULL -eq $tablica.PSComputerName) -or ("" -eq $tablica.PSComputerName)){
-        #         $tablica | Add-Member -MemberType AliasProperty -Name "LogicalHostname" -Value PhysicalHostname
-        #         #write-host "ble $_.PhysicalHostname "
-        #     }
-        # }
-        
-        # foreach ($tablica in $results){
-        #     if (!($tablica.PSObject.Properties["PSComputerName"]) <#-or ($NULL -eq $tablica.PSComputerName) -or ("" -eq $tablica.PSComputerName)#>){
-        #         $tablica | Add-member -NotePropertyName "LogicalHostname"  "dupa"
-        #     }
-        #     else {
-        #         $tablica | Add-member -NotePropertyName "LogicalHostname"  "jas"
-        #     }
-        # }
-
-
 
         # Saving results to a file
         $results | select-object -property              `
@@ -164,7 +142,7 @@ if ($TRUE -eq $computersToScan) {
                                 "OS",                   `
                                 "LocalAdministrators",  `
                                 "IPAddress",            `
-                                "SuffixOrigin",         `
+                                #"SuffixOrigin",         `
                                 "PSVersion"             `
                                 | Export-Csv -Path $resultsFile -Delimiter ";" -Append 
 
@@ -205,7 +183,8 @@ else {
 
 # Get-NetIPAddress | Where-Object {($_."InterfaceAlias" -like "Ethernet") -and ($_."AddressFamily" -like "*IPv4*" )} | Select-Object -ExpandProperty IPAddress
 # Get-NetIPAddress -AddressState Preferred -AddressFamily IPv4 | select IPAddress,InterfaceAlias
-# (Get-NetConnectionProfile).InterfaceIndex | Get-NetIPAddress -InterfaceIndex {$_}
+#  $i = 1; (Get-NetConnectionProfile).InterfaceIndex | Get-NetIPAddress -InterfaceIndex {($_)} | Where-Object {$_.AddressFamily -like "IPv4"} | foreach-object {($i).ToString() + "." + (($_.IPAddress).ToString()); $i++}
+# ((Get-NetConnectionProfile).InterfaceIndex | Get-NetIPAddress -InterfaceIndex {($_)} | Where-Object {$_.AddressFamily -like "IPv4"} | foreach-object {"(" + ($_.SuffixOrigin) + ": " + (($_.IPAddress).ToString()) + ": " + ((Get-NetAdapter -InterfaceIndex $_.InterfaceIndex).MacAddress) + ")"})
 
 #Get-CimClass -Namespace root/CIMV2 | Where-Object CimClassName -like Win32* | Select-Object CimClassName -wyświetla wszystkie klasy CIM z których można pobierać dane
 
@@ -214,4 +193,9 @@ else {
 #$sessions | Remove-PSSession
 #https://community.spiceworks.com/topic/932043-powershell-computer-age
 #https://stackoverflow.com/questions/56980098/get-computer-manufacture-date-by-evaluate-cpu-dates-from-a-csv-file-using-powers
+
+
+
+#Get-ADComputer -SearchBase "OU=5039,OU=Rejon,OU=Resort,DC=ad,DC=ms,DC=gov,DC=pl" -Filter * -property * | select-object -property Name, @{Name="LastLogon";Expression={[datetime]::FromFileTime($_.LastLogonTimeStamp)}} | Sort-Object -Property LastLogon
+
 #endregion
