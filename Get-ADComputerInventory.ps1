@@ -151,8 +151,10 @@ if ($TRUE -eq $computersToScan) {
     }
 
     else {
-        Write-Warning -Message "Computers listed below wasn't scanned before (they're not present in file `"$resultsFile`") and now script couldn't establish connection with them. They are offline or those are AD computer accounts of computers that was removed from use without disconnecting them from Active Directory domain." 
-        $computersToScan | Sort-Object
+        Write-Warning -Message "Computers listed below wasn't scanned before (they're not present in file `"$resultsFile`") and now script couldn't establish connection with them. They are offline or those are accounts of computers removed without proper disconnecting them from Active Directory domain." 
+        #$computersToScan | Sort-Object
+        #Get-ADComputer -SearchBase $OUPath -Filter * -property * | select-object -property Name, @{Name="LastLogon";Expression={[datetime]::FromFileTime($_.LastLogonTimeStamp)}}
+        $computersToScan | ForEach-Object {Get-ADComputer -Filter "DNSHostName -eq '$_'" -Properties LastLogonDate | select-object DNSHostName, LastLogonDate}
         # to trzeba zmienić bo działa tylko wtedy gdy nie uda się nawiązać żadnej sesji w IFie, a to się raczej nei będzie zdarzało
     }
     
